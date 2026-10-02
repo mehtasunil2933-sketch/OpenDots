@@ -35,7 +35,7 @@ zerops:
         DATABASE_PATH: /mnt/vol/opendots/opendots.sqlite
         OWNER_ID: opendots-owner                          # keep stable forever
         APP_ORIGIN: https://app-327c-4310.prg1.zerops.app   # exact subdomain URL, no trailing slash
-        OPENAI_MODEL: groq/openai/gpt-oss-120b            # OPENAI_BASE_URL + OPENAI_API_KEY are secrets
+        OPENAI_MODEL: ag/gemini-3.8-flash-medium          # OPENAI_BASE_URL + OPENAI_API_KEY are secrets
         VOICE_NAME: marin
         # Read-only page browser (same container, loopback only)
         BROWSER_URL: http://127.0.0.1:4311
