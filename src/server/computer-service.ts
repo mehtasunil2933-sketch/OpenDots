@@ -149,18 +149,19 @@ export class ComputerService {
     const expected = `${ns}-computer-${id}`;
     if (state.botId !== id || state.container !== expected)
       throw new Error('Computer identity mismatch.');
+    // A published port is trusted only on the supervisor's own host: loopback when
+    // the supervisor runs locally, or its private hostname when it runs on a
+    // separate machine (for example a `computer` service on a private network).
+    // Listings carry only the port, so it resolves against that same host.
+    const supervisorHost = new URL(this.config.computerSupervisorUrl!).hostname;
     const url = new URL(
       state.url ??
         (state.port
-          ? `http://127.0.0.1:${state.port}`
+          ? `http://${supervisorHost}:${state.port}`
           : `http://${expected}:4100`),
     );
     const network =
       url.hostname === expected.toLowerCase() && url.port === '4100';
-    // A published port is trusted only on the supervisor's own host: loopback when
-    // the supervisor runs locally, or its private hostname when it runs on a
-    // separate machine (for example a `computer` service on a private network).
-    const supervisorHost = new URL(this.config.computerSupervisorUrl!).hostname;
     const local =
       url.hostname === supervisorHost &&
       !!state.port &&

@@ -85,7 +85,7 @@ function fixture(deadline = 1000, supervisorUrl = 'http://127.0.0.1:4312') {
     setPaused: (value: boolean) => {
       paused = value;
     },
-    setEndpoint: (value: string, port?: number) => {
+    setEndpoint: (value: string | undefined, port?: number) => {
       endpoint = value;
       endpointPort = port;
     },
@@ -331,4 +331,18 @@ it('accepts published ports only on the supervisor host of a separate computer s
   await expect(local.service.action(local.id, 'read', {})).rejects.toThrow(
     'endpoint',
   );
+});
+it('reaches a listed computer by port on the supervisor host when no URL is listed', async () => {
+  const remote = fixture(1000, 'http://computer:4312');
+  remote.setEndpoint(undefined, 41001);
+  await expect(
+    remote.service.action(remote.id, 'read', {}),
+  ).resolves.toBeDefined();
+  expect(remote.calls.at(-1)?.url).toMatch(/^http:\/\/computer:41001\//);
+  const local = fixture();
+  local.setEndpoint(undefined, 41001);
+  await expect(
+    local.service.action(local.id, 'read', {}),
+  ).resolves.toBeDefined();
+  expect(local.calls.at(-1)?.url).toMatch(/^http:\/\/127\.0\.0\.1:41001\//);
 });
