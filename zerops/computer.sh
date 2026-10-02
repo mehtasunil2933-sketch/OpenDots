@@ -78,6 +78,14 @@ stop() {
 start() {
   mkdir -p "$WORK/backup"
 
+  # The VM's eth0 MTU (1450) is smaller than docker0's (1500): without clamping,
+  # HTTPS from bridge containers (image build + Dot computers) stalls. Idempotent;
+  # refuse to start without it, otherwise Dot computers silently cannot browse.
+  sudo -n iptables -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
+    || sudo -n iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu \
+    || { log "MSS CLAMP FAILED - container networking would be broken, refusing to start"; exit 1; }
+  log "MSS clamp active"
+
   # No computer volumes = new VM or wiped disk -> restore first. Never start empty
   # over a failed restore, otherwise the next backup would overwrite good data in R2.
   if [ -z "$(computer_volumes)" ]; then
