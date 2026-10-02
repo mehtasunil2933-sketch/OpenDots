@@ -7,6 +7,7 @@ import { WorkspaceStore } from '../src/server/workspace.js';
 import { ComputerService } from '../src/server/computer-service.js';
 import { computerInputs } from '../src/shared/computer-types.js';
 import { computerTools } from '../src/server/computer-tools.js';
+import type { z } from 'zod';
 const stores: WorkspaceStore[] = [];
 afterEach(() => {
   for (const store of stores.splice(0)) store.close();
@@ -345,4 +346,31 @@ it('reaches a listed computer by port on the supervisor host when no URL is list
     local.service.action(local.id, 'read', {}),
   ).resolves.toBeDefined();
   expect(local.calls.at(-1)?.url).toMatch(/^http:\/\/127\.0\.0\.1:41001\//);
+});
+it('ignores invented arguments on computer tools that take no input', async () => {
+  const f = fixture();
+  const action = vi.spyOn(f.service, 'action').mockResolvedValue({ ok: true });
+  const tools = computerTools(
+    f.service,
+    f.id,
+    vi.fn(),
+    new AbortController().signal,
+  );
+  const snapshot = tools.find((t) => t.name === 'computer_snapshot')!;
+  expect(
+    (snapshot.parameters as z.ZodType).safeParse({ reason: 'look' }).success,
+  ).toBe(true);
+  await snapshot.execute?.({ reason: 'look' });
+  expect(action).toHaveBeenLastCalledWith(
+    f.id,
+    'snapshot',
+    {},
+    'agent',
+    expect.anything(),
+  );
+  const read = tools.find((t) => t.name === 'computer_files_read')!;
+  expect(
+    (read.parameters as z.ZodType).safeParse({ path: 'a', reason: 'x' })
+      .success,
+  ).toBe(false);
 });
