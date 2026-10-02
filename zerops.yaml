@@ -1,0 +1,126 @@
+# Zerops deployment for OpenDots: `app` (Node runtime + volume, autoscaling) and
+# `computer` (Docker VM running the OpenBot supervisor and one container per Dot).
+# See zerops/README.md.
+zerops:
+  # ---------- web app + API + read-only page browser, autoscaling ----------
+  - setup: app
+    build:
+      base: nodejs@24
+      os: ubuntu
+      buildCommands:
+        - npm ci
+        - npm run build
+        - npm prune --omit=dev
+      deployFiles:
+        - ./dist
+        - ./node_modules
+        - ./package.json
+    run:
+      base: nodejs@24
+      os: ubuntu
+      prepareCommands:
+        - sudo apt-get update
+        - sudo apt-get install -y sqlite3 rclone
+        - sudo mkdir -p /opt/ms-playwright
+        - sudo chmod 777 /opt/ms-playwright
+        - sudo env "PATH=$PATH" npx -y playwright@1.63.0 install-deps chromium
+        - PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright npx -y playwright@1.63.0 install chromium
+      volume:
+        hostname: vol
+        mountPath: /mnt/vol
+      envVariables:
+        NODE_ENV: production
+        HOST: 0.0.0.0
+        PORT: "4310"
+        DATABASE_PATH: /mnt/vol/opendots/opendots.sqlite
+        OWNER_ID: opendots-owner                          # keep stable forever
+        APP_ORIGIN: https://YOUR-APP-SUBDOMAIN.zerops.app   # exact subdomain URL, no trailing slash
+        OPENAI_MODEL: YOUR-MODEL-ID                       # OPENAI_BASE_URL + OPENAI_API_KEY are secrets
+        VOICE_NAME: marin
+        # Read-only page browser (same container, loopback only)
+        BROWSER_URL: http://127.0.0.1:4311
+        BROWSER_HOST: 127.0.0.1
+        BROWSER_PORT: "4311"
+        PLAYWRIGHT_BROWSERS_PATH: /opt/ms-playwright
+        # Dot computers on the `computer` service
+        COMPUTER_SUPERVISOR_URL: http://computer:4312
+        COMPUTER_NAMESPACE: opendots                      # keep stable: names computer containers/volumes
+        # Backups
+        RCLONE_CONFIG_R2_TYPE: s3
+        RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+        RCLONE_CONFIG_R2_REGION: auto
+        RCLONE_CONFIG_R2_ACL: private
+        R2_BUCKET: opendots-backup
+      startCommands:
+        - name: browser
+          command: node dist/server/browser/index.js
+        - name: app
+          command: node dist/server/server/index.js
+          initCommands:
+            - mkdir -p /mnt/vol/opendots /mnt/vol/backup
+      ports:
+        - port: 4310
+          httpSupport: true
+      crontab:
+        - command: >
+            set -e;
+            STAMP=$(date -u -I);
+            sqlite3 /mnt/vol/opendots/opendots.sqlite ".backup /mnt/vol/backup/opendots-$STAMP.sqlite";
+            gzip -f /mnt/vol/backup/opendots-$STAMP.sqlite;
+            rclone copyto /mnt/vol/backup/opendots-$STAMP.sqlite.gz r2:$R2_BUCKET/app/opendots-$STAMP.sqlite.gz;
+            rclone copyto /mnt/vol/backup/opendots-$STAMP.sqlite.gz r2:$R2_BUCKET/app/latest.sqlite.gz;
+            find /mnt/vol/backup -name 'opendots-*.sqlite.gz' -mtime +3 -delete;
+            rclone delete r2:$R2_BUCKET/app/ --min-age 30d --include 'opendots-*.sqlite.gz'
+          timing: "45 3 * * *"
+          allContainers: false
+
+  # ---------- Dot computers: supervisor + one container per Dot, fixed Docker VM ----------
+  - setup: computer
+    build:
+      base: nodejs@24
+      os: ubuntu
+      buildCommands:
+        # OpenBot source pinned to the revision OpenDots reviewed (compose.computers.yml)
+        - git clone --filter=blob:none https://github.com/CopilotKit/OpenBot.git openbot
+        - git -C openbot checkout --detach b6932d31a8d6e7896c15139dfc27a6c6911deb27
+        - rm -rf openbot/.git
+        # Plain supervisor build context + both fail-closed patches
+        - mkdir -p zerops/build/supervisor
+        - cp -r openbot/supervisor/package.json openbot/supervisor/bun.lock openbot/supervisor/src zerops/build/supervisor/
+        - cp deployment/computers/LICENSE.openbot zerops/build/supervisor/
+        - cp zerops/supervisor.Dockerfile zerops/build/supervisor/Dockerfile
+        - node deployment/computers/harden-supervisor.mjs zerops/build/supervisor/src/environment.ts
+        - node deployment/computers/remote-supervisor.mjs zerops/build/supervisor/src/docker.ts
+      deployFiles:
+        - ./openbot/agent-computer
+        - ./openbot/.dockerignore
+        - ./zerops/build
+        - ./zerops/computer.sh
+    run:
+      base: docker@26.1
+      prepareCommands:
+        - docker image pull oven/bun:1.3.14-alpine
+        - docker image pull ubuntu:24.04
+        - docker image pull node:24.18.1-bookworm-slim
+        - docker image pull node:24-bookworm-slim
+        - docker image pull rclone/rclone:1.68.2
+      envVariables:
+        COMPUTER_NAMESPACE: opendots                      # must match the app service
+        COMPUTER_MEMORY_BYTES: "1073741824"               # 1 GB per Dot computer
+        COMPUTER_PORT_POOL: 41001-41010                   # must match the ports below
+        COMPUTER_PUBLISH_IP: 0.0.0.0                      # private project network only (not public)
+        COMPUTER_PUBLIC_HOST: computer                    # this service's hostname
+        R2_BUCKET: opendots-backup
+      start: sh zerops/computer.sh start
+      ports:
+        - port: 4312
+        - port: 41001
+        - port: 41002
+        - port: 41003
+        - port: 41004
+        - port: 41005
+        - port: 41006
+        - port: 41007
+        - port: 41008
+        - port: 41009
+        - port: 41010

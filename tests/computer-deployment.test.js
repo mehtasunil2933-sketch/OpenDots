@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { hardenSupervisorEnvironment } from '../deployment/computers/harden-supervisor.mjs';
+import { remoteSupervisorDocker } from '../deployment/computers/remote-supervisor.mjs';
 
 const upstream = `export function environmentFor(botId, env) {
   const computerToken = env.COMPUTER_TOKEN?.trim() || undefined;
@@ -27,6 +28,36 @@ it('refuses missing or ambiguous upstream patch targets', () => {
     /contract changed/,
   );
   expect(() => hardenSupervisorEnvironment(upstream + upstream)).toThrow(
+    /contract changed/,
+  );
+});
+
+const dockerUpstream = `async function ensure(names, options, settled) {
+  await docker.createContainer({
+    HostConfig: hostConfig(names, options),
+  });
+  return {
+    ...(options.network
+      ? { url: \`http://\${names.container}:4100\` }
+      : settled?.port
+        ? { url: \`http://127.0.0.1:\${settled.port}\` }
+        : {}),
+  };
+}`;
+it('patches the supervisor for a separate computer host', () => {
+  const patched = remoteSupervisorDocker(dockerUpstream);
+  expect(patched).toContain(
+    'HostConfig: await remoteHostConfig(hostConfig(names, options)),',
+  );
+  expect(patched).toContain('process.env.COMPUTER_PUBLIC_HOST');
+  expect(patched).toContain('async function remoteHostConfig(config)');
+  expect(patched).not.toContain('`http://127.0.0.1:${settled.port}`');
+});
+it('refuses to patch a changed supervisor docker contract', () => {
+  expect(() => remoteSupervisorDocker('changed upstream')).toThrow(
+    /contract changed/,
+  );
+  expect(() => remoteSupervisorDocker(dockerUpstream + dockerUpstream)).toThrow(
     /contract changed/,
   );
 });

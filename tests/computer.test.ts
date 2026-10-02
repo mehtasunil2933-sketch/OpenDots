@@ -11,13 +11,14 @@ const stores: WorkspaceStore[] = [];
 afterEach(() => {
   for (const store of stores.splice(0)) store.close();
 });
-function fixture(deadline = 1000) {
+function fixture(deadline = 1000, supervisorUrl = 'http://127.0.0.1:4312') {
   const workspace = new WorkspaceStore(':memory:', 'owner');
   stores.push(workspace);
   const id = workspace.dots()[0].id;
   const calls: { url: string; init?: RequestInit }[] = [];
   let paused = false;
   let endpoint: string | undefined;
+  let endpointPort: number | undefined;
   let actionHandler: (
     url: string,
     init?: RequestInit,
@@ -32,6 +33,7 @@ function fixture(deadline = 1000) {
           container: `opendots-computer-${dot.id}`,
           status: 'running',
           ...(endpoint ? { url: endpoint } : {}),
+          ...(endpointPort ? { port: endpointPort } : {}),
         })),
       });
     if (url.endsWith('/ensure'))
@@ -56,7 +58,7 @@ function fixture(deadline = 1000) {
     voiceName: 'voice',
     slackUsers: [],
     runtimeUrl: 'http://localhost',
-    computerSupervisorUrl: 'http://127.0.0.1:4312',
+    computerSupervisorUrl: supervisorUrl,
     computerSupervisorToken: 'supervisor-secret',
     computerToken: 'master-secret',
   };
@@ -83,8 +85,9 @@ function fixture(deadline = 1000) {
     setPaused: (value: boolean) => {
       paused = value;
     },
-    setEndpoint: (value: string) => {
+    setEndpoint: (value: string, port?: number) => {
       endpoint = value;
+      endpointPort = port;
     },
     handle: (fn: typeof actionHandler) => {
       actionHandler = fn;
@@ -304,4 +307,28 @@ it('gives agents a safe recovery instruction for stale browser or control confli
     f.service.action(f.id, 'navigate', { url: 'https://example.com' }, 'agent'),
   ).rejects.not.toThrow(f.config.computerToken);
   expect(f.workspace.computers.audit(f.id)[0].outcome).toBe('failed');
+});
+it('accepts published ports only on the supervisor host of a separate computer service', async () => {
+  const remote = fixture(1000, 'http://computer:4312');
+  remote.setEndpoint('http://computer:41001', 41001);
+  await expect(
+    remote.service.action(remote.id, 'read', {}),
+  ).resolves.toBeDefined();
+  expect(remote.calls.at(-1)?.url).toMatch(/^http:\/\/computer:41001\//);
+  for (const [url, port] of [
+    ['http://attacker.test:41001', 41001],
+    ['http://computer:41002', 41001],
+    ['http://127.0.0.1:41001', 41001],
+  ] as const) {
+    const f = fixture(1000, 'http://computer:4312');
+    f.setEndpoint(url, port);
+    await expect(f.service.action(f.id, 'read', {})).rejects.toThrow(
+      'endpoint',
+    );
+  }
+  const local = fixture();
+  local.setEndpoint('http://computer:41001', 41001);
+  await expect(local.service.action(local.id, 'read', {})).rejects.toThrow(
+    'endpoint',
+  );
 });

@@ -157,11 +157,14 @@ export class ComputerService {
     );
     const network =
       url.hostname === expected.toLowerCase() && url.port === '4100';
+    // A published port is trusted only on the supervisor's own host: loopback when
+    // the supervisor runs locally, or its private hostname when it runs on a
+    // separate machine (for example a `computer` service on a private network).
+    const supervisorHost = new URL(this.config.computerSupervisorUrl!).hostname;
     const local =
-      url.hostname === '127.0.0.1' &&
+      url.hostname === supervisorHost &&
       !!state.port &&
-      url.port === String(state.port) &&
-      new URL(this.config.computerSupervisorUrl!).hostname === '127.0.0.1';
+      url.port === String(state.port);
     if (
       url.protocol !== 'http:' ||
       url.username ||

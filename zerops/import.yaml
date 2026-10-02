@@ -1,0 +1,54 @@
+# Zerops GUI -> Import project. Replace every REPLACE_ value before importing.
+project:
+  name: opendots
+  tags:
+    - opendots
+
+services:
+  - hostname: vol
+    type: local-storage:single@1
+    verticalAutoscaling:
+      minDisk: 5
+
+  - hostname: app
+    type: nodejs@24
+    minContainers: 1
+    maxContainers: 1                # SQLite + in-process scheduler: one container only
+    enableSubdomainAccess: true
+    verticalAutoscaling:
+      cpuMode: SHARED
+      minCpu: 1
+      maxCpu: 4
+      minRam: 0.5
+      maxRam: 3
+      minFreeRamGB: 0.25
+    envSecrets:
+      OWNER_TOKEN: REPLACE_HEX_A                       # openssl rand -hex 24 (your login token)
+      BROWSER_SECRET: REPLACE_HEX_B                    # openssl rand -hex 24
+      COMPUTER_SUPERVISOR_TOKEN: REPLACE_HEX_C         # openssl rand -hex 24 (same on computer)
+      COMPUTER_TOKEN: REPLACE_HEX_D                    # openssl rand -hex 24 (same on computer)
+      INTELLIGENCE_API_KEY: REPLACE_CPK_KEY
+      OPENAI_API_KEY: REPLACE_PROVIDER_KEY
+      OPENAI_BASE_URL: https://REPLACE_YOUR_DEPLOYED_URL/v1
+      RCLONE_CONFIG_R2_ENDPOINT: https://REPLACE_ACCOUNT_ID.r2.cloudflarestorage.com
+      RCLONE_CONFIG_R2_ACCESS_KEY_ID: REPLACE_R2_KEY_ID
+      RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: REPLACE_R2_SECRET
+
+  - hostname: computer
+    type: docker@26.1
+    minContainers: 1
+    maxContainers: 1
+    verticalAutoscaling:            # Docker VM = fixed values: min == max
+      cpuMode: SHARED
+      minCpu: 2
+      maxCpu: 2
+      minRam: 2
+      maxRam: 2
+      minDisk: 20
+      maxDisk: 20
+    envSecrets:
+      COMPUTER_SUPERVISOR_TOKEN: REPLACE_HEX_C         # same value as app
+      COMPUTER_TOKEN: REPLACE_HEX_D                    # same value as app
+      RCLONE_CONFIG_R2_ENDPOINT: https://REPLACE_ACCOUNT_ID.r2.cloudflarestorage.com
+      RCLONE_CONFIG_R2_ACCESS_KEY_ID: REPLACE_R2_KEY_ID
+      RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: REPLACE_R2_SECRET
